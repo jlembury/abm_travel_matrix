@@ -6,7 +6,16 @@ import time
 from db_implementation import shp2dbtable, csv2dbtable, create_project_tables, set_primary_key, set_foreign_key, create_spatial_index
 from network_analysis import create_networkx_object, get_od_routes, find_shortest_route, routes2dbtable
 from passwords import get_db_pass
+from util import get_next_routeid
 
+# file paths
+ROADS_SHP = './data/RoadsAll_2017.shp'
+PARCELS_SHP = './data/ParcelsOct2017.shp'
+SRA_SHP = './data/SRA2010tiger.shp'
+CORE_PLACES_CSV = './data/sg_core_places_24feb2022.csv'
+CORE_PLACES_SHP = './data/sg_core_places_24feb2022_2230.shp'
+
+# database info
 DB_PASS = get_db_pass()
 DB_CONN = {
     'host': '127.0.0.1',
@@ -16,14 +25,9 @@ DB_CONN = {
     'password': DB_PASS
 }
 
-ROADS_SHP = './data/RoadsAll_2017.shp'
-PARCELS_SHP = './data/ParcelsOct2017.shp'
-SRA_SHP = './data/SRA2010tiger.shp'
-CORE_PLACES_CSV = './data/sg_core_places_24feb2022.csv'
-CORE_PLACES_SHP = './data/sg_core_places_24feb2022_2230.shp'
-
+# network analysis iterations
 ROW_LIMIT = 10000
-STARTING_ROUTEID = 3120001
+STARTING_ROUTEID = get_next_routeid(DB_CONN, 'esco', 'od_routes')  # 7370001
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':

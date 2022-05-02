@@ -8,20 +8,6 @@ import sys
 
 
 # FUNCTIONS
-def sqlalchemy_engine(dbparams):
-    """
-    Connect to a PostgreSQL database using SQLAlchemy
-    :param dbparams: dictionary containing database log in information (user, password, host, port, dbname)
-    :return: SQLAlchemy engine
-    """
-    # create enging for database connection
-    engine = create_engine(
-        "postgresql+psycopg2://{}:{}@{}:{}/{}".format(
-            dbparams['user'], dbparams['password'], dbparams['host'], dbparams['port'], dbparams['dbname']))
-
-    return engine
-
-
 def psycopg2_connect(dbparams):
     """
     Create a Postgres database connection using psycopg2
@@ -39,3 +25,36 @@ def psycopg2_connect(dbparams):
         print(error)
         sys.exit(1)
     return conn
+
+
+def sqlalchemy_engine(dbparams):
+    """
+    Connect to a PostgreSQL database using SQLAlchemy
+    :param dbparams: dictionary containing database log in information (user, password, host, port, dbname)
+    :return: SQLAlchemy engine
+    """
+    # create enging for database connection
+    engine = create_engine(
+        "postgresql+psycopg2://{}:{}@{}:{}/{}".format(
+            dbparams['user'], dbparams['password'], dbparams['host'], dbparams['port'], dbparams['dbname']))
+
+    return engine
+
+
+def get_next_routeid(dbparams, dbschema, dbtable):
+    """
+    Return the next routeid for shortest path analysis (first route id in dataframe from get_od_routes())
+    :param dbparams: Dictionary containing database log in information (user, password, host, port, dbname)
+    :param dbschema: String containing database schema name
+    :param dbtable: String containing database table name
+    :return: Integer value of next null routeid
+    """
+    sql_str = "SELECT routeid from {}.{} WHERE shortest_path IS NULL ORDER by routeid LIMIT 1;".format(dbschema, dbtable)
+
+    # connect to database
+    engine = sqlalchemy_engine(dbparams)
+    with engine.connect() as conn:
+        # get next null routeid
+        result = conn.execute(sql_str)
+        id = result.fetchall()[0][0]
+    return id
