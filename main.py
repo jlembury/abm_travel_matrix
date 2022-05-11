@@ -25,9 +25,10 @@ DB_CONN = {
     'password': DB_PASS
 }
 
-# network analysis iterations
+# network analysis variables
 ROW_LIMIT = 10000
-STARTING_ROUTEID = get_next_routeid(DB_CONN, 'esco', 'od_routes')  # 7370001
+WALK = True
+DRIVE = False
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
@@ -69,31 +70,51 @@ if __name__ == '__main__':
     #########################
     # ESCO NETWORK ANALYSIS #
     #########################
-    # create networkx graph object from edges table in database
-    G = create_networkx_object(DB_CONN, 'esco', 'edges')
-    print('NetworkX graph object has {} nodes and {} edges.'.format(G.number_of_nodes(), G.number_of_edges()))
-
     od_len = ROW_LIMIT
-    first_routeid = STARTING_ROUTEID
+
+    if WALK:
+        # create networkx graph object from edges table in database (no freeways, highways, or ramps)
+        G = create_networkx_object(DB_CONN, 'esco', 'edges', walk=True)
+        # get first routeid for network analysis
+        first_routeid = get_next_routeid(DB_CONN, 'esco', 'od_routes', walk=True)
+    if DRIVE:
+        # create networkx graph object from edges table in database (all road types)
+        G = create_networkx_object(DB_CONN, 'esco', 'edges')
+        # get first routeid for network analysis
+        first_routeid = get_next_routeid(DB_CONN, 'esco', 'od_routes')
+
+    print('NetworkX graph object has {} nodes and {} edges.'.format(G.number_of_nodes(), G.number_of_edges()))
     print(od_len, first_routeid)
+
     while od_len == ROW_LIMIT:
         st = time.time()
-        # get routes from routes table in database
-        od = get_od_routes(DB_CONN, 'esco', 'od_routes', od_len, first_routeid)
+        if WALK:
+            # get routes from routes table in database
+            od = get_od_routes(DB_CONN, 'esco', 'od_routes', od_len, first_routeid, walk=True)
+            # find shortest routes using Dijkstra's algorithm and calculate travel times
+            paths, errors = find_shortest_route(G, od, 'routeid', 'node_orig', 'node_dest', 'time_walk_sec', walk=True)
+            # commit paths and travel times to the routes table in database
+            routes2dbtable(DB_CONN, 'esco', 'od_routes', 'walk_path', 'walk_time_sec', paths, walk=True)
+            # get first_routeid for next iteration
+            od_len = len(od)
+            first_routeid = get_next_routeid(DB_CONN, 'esco', 'od_routes', walk=True)
+        if DRIVE:
+            # get routes from routes table in database
+            od = get_od_routes(DB_CONN, 'esco', 'od_routes', od_len, first_routeid)
+            # find shortest routes using Dijkstra's algorithm and calculate travel times
+            paths, errors = find_shortest_route(G, od, 'routeid', 'node_orig', 'node_dest', 'time_drive_sec')
+            # commit paths and travel times to the routes table in database
+            routes2dbtable(DB_CONN, 'esco', 'od_routes', 'drive_path', 'drive_time_sec', paths)
+            # get first_routeid for next iteration
+            od_len = len(od)
+            first_routeid += od_len
 
-        # find shortest routes using Dijkstra's algorithm and calculate travel times
-        paths, errors = find_shortest_route(G, od, 'routeid', 'node_orig', 'node_dest', 'time_drive_sec')
         # print('Shortest path routes: ', paths)
         if len(errors) > 0:
-            print('Shortest path errors: ', errors)
-
-        # commit paths and travel times to the routes table in database
-        routes2dbtable(DB_CONN, 'esco', 'od_routes', 'time_drive_sec', paths)
+            print('Shortest path errors: ', len(errors))
+            # print('Shortest path errors: ', len(errors), ' ', errors)
         et = time.time()
-
         processing_time = et - st
-        od_len = len(od)
-        first_routeid += od_len
         print("Last loop took {} seconds. Next loop has {} rows, starting with 'routeid' {}.".format(processing_time, od_len, first_routeid))
 
     print("Complete.")

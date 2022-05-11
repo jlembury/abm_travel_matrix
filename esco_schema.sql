@@ -102,3 +102,37 @@ INSERT INTO esco.od_routes (node_orig, node_dest) (
     WITH poi AS (SELECT nodeid AS poinode FROM esco.nodes WHERE poi = 1),
          routes AS (SELECT t1.poinode AS node_orig, t2.poinode AS node_dest from poi t1 CROSS JOIN poi t2 WHERE t1.poinode != t2.poinode)
     SELECT routes.node_orig AS node_orig, routes.node_dest AS node_dest FROM routes WHERE NOT EXISTS (SELECT node_orig, node_dest FROM esco.od_routes t3 WHERE t3.node_orig = routes.node_orig AND t3.node_dest = routes.node_dest));
+
+-- Rename path and time columns to specify driving mode
+ALTER TABLE esco.od_routes RENAME COLUMN shortest_path to drive_path;
+ALTER TABLE esco.od_routes RENAME COLUMN time_drive_sec to drive_time_sec;
+
+-- Pedestrian routes - same as road network, only check for O-D <= 5 miles apart --> ~8050 meters (reference Bradley et al., 2010)
+--add binary walk column (1=TRUE, route can use pedestrian mode.)
+ALTER TABLE esco.od_routes ADD COLUMN walk INT DEFAULT 0;
+WITH t AS (SELECT routes.node_orig, routes.node_dest, orig.geometry AS orig_geom, dest.geometry AS dest_geom
+            FROM esco.od_routes routes LEFT JOIN esco.nodes orig ON routes.node_orig = orig.nodeid
+            LEFT JOIN esco.nodes dest ON routes.node_dest = dest.nodeid),
+     t1 AS (SELECT t.node_orig, t.node_dest, ST_Distance(t.orig_geom, t.dest_geom) AS distance FROM t)
+UPDATE esco.od_routes SET walk = t2.walk FROM (
+    SELECT t1.node_orig, t1.node_dest, t1.distance,
+           CASE WHEN t1.distance <= 8050 THEN 1 WHEN t1.distance > 8050 THEN 0 END walk FROM t1) AS t2
+WHERE od_routes.node_orig = t2.node_orig AND od_routes.node_dest = t2.node_dest;
+
+SELECT COUNT(*) FROM esco.od_routes WHERE walk = 1; --1,334,135 pedestrian routes
+
+--add binary column to edges table for pedestrian routes: 1=walkable, 0=not walkable (freeway, highway, freeway ramps)
+ALTER TABLE esco.roads_2017 ADD COLUMN carto TEXT;
+WITH t AS (SELECT roadsegid, "CARTO" AS carto FROM esco.roads_2017 e LEFT JOIN raw.sandag_roadsall_2017 r ON e.roadsegid = r."ROADSEGID")
+UPDATE esco.roads_2017 SET carto=t.carto FROM t WHERE esco.roads_2017.roadsegid = t.roadsegid;
+
+ALTER TABLE esco.edges ADD COLUMN walk INT DEFAULT 0;
+WITH t AS (SELECT roadsegid, carto, 1 AS walk FROM esco.roads_2017 WHERE carto NOT IN ('1', '2', '8', '9'))
+UPDATE esco.edges SET walk = t.walk FROM t WHERE esco.edges.roadsegid = t.roadsegid;
+
+SELECT COUNT(*) FROM esco.edges WHERE walk = 1; --11,499 walkable edges (not freeways, highways, or ramps)
+
+-- change binary walk column in od_routes to 1 where travel time <6000 sec (5 miles at 3mph), 0 otherwise
+WITH t as (SELECT routeid, CASE WHEN walk_time_sec > 6000 THEN 0 WHEN walk_time_sec IS NULL THEN 0 WHEN walk_time_sec <= 6000 THEN 1 END walk FROM esco.od_routes)
+UPDATE esco.od_routes SET walk = t.walk FROM t WHERE esco.od_routes.routeid = t.routeid;
+SELECT SUM(walk) FROM esco.od_routes; --1,232,988 walkable od pairs with time < 6000 sec (5 miles at 3mph)

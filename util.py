@@ -41,20 +41,34 @@ def sqlalchemy_engine(dbparams):
     return engine
 
 
-def get_next_routeid(dbparams, dbschema, dbtable):
+def get_next_routeid(dbparams, dbschema, dbtable, walk=False):
     """
     Return the next routeid for shortest path analysis (first route id in dataframe from get_od_routes())
     :param dbparams: Dictionary containing database log in information (user, password, host, port, dbname)
     :param dbschema: String containing database schema name
     :param dbtable: String containing database table name
+    :param walk: Boolean, True if walking routes and False for driving routes
     :return: Integer value of next null routeid
     """
-    sql_str = "SELECT routeid from {}.{} WHERE shortest_path IS NULL ORDER by routeid LIMIT 1;".format(dbschema, dbtable)
+    # walking routes
+    if walk:
+        sql_str = "SELECT routeid from {}.{} WHERE walk_path IS NOT NULL ORDER by routeid DESC LIMIT 1;".format(dbschema, dbtable)
+        sql_str2 = "SELECT routeid from {}.{} WHERE walk = 1 ORDER by routeid LIMIT 1;".format(dbschema, dbtable)
+    # driving routes
+    else:
+        sql_str = "SELECT routeid from {}.{} WHERE drive_path IS NULL ORDER by routeid LIMIT 1;".format(dbschema, dbtable)
+        sql_str2 = "SELECT routeid from {}.{} ORDER by routeid LIMIT 1;".format(dbschema, dbtable)
 
     # connect to database
     engine = sqlalchemy_engine(dbparams)
     with engine.connect() as conn:
-        # get next null routeid
-        result = conn.execute(sql_str)
-        id = result.fetchall()[0][0]
+        try:
+            # get next null routeid
+            result = conn.execute(sql_str)
+            id = result.fetchall()[0][0]
+        except Exception as e:
+            print(e)
+            # get first routeid
+            result = conn.execute(sql_str2)
+            id = result.fetchall()[0][0]
     return id
